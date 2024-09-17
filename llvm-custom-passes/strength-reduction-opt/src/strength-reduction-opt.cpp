@@ -13,7 +13,8 @@ namespace {
 
 struct StrengthReduction : public PassInfoMixin<StrengthReduction> {
     PreservedAnalyses run(Module &M, ModuleAnalysisManager &AM) {
-    std::stack<Instruction *> removeListInstr;
+    
+	std::stack<Instruction *> removeListInstr;
     
 		for(auto &F : M)
 		{
@@ -23,6 +24,9 @@ struct StrengthReduction : public PassInfoMixin<StrengthReduction> {
 				{
 					if(auto* op = dyn_cast<BinaryOperator>(&I)) 
 					{  
+
+						/* Optimize multiplication by a postive integer constant that is a power of 2 to be transformed into logic left shift operation */
+						
 						// Check if operator is mul
 						if(auto* opc = dyn_cast<MulOperator>(op))
 						{  	
@@ -30,36 +34,37 @@ struct StrengthReduction : public PassInfoMixin<StrengthReduction> {
 							Value* lhs = op->getOperand(0);
 							Value* rhs = op->getOperand(1);
 							
-							// Check if right operand is an integer constant divideable by 2
+							// Check if right operand is a positive integer constant divideable by 2
 							if(ConstantInt* CI = dyn_cast<ConstantInt>(rhs)) 
 							{
 						  		if(CI->getBitWidth() <= 32) 
 						  		{
 									int constIntValue = CI->getSExtValue();
-									
-									if(constIntValue % 2 == 0)
+
+									if(constIntValue > 0)
 									{
-										int shiftAmount = std::log2(constIntValue);
-										errs() << "Shift amount: " << shiftAmount << "\n";
-										
-										// Replace instrucion "mul" with "shl"
-										IRBuilder<> builder(op);
-										Value* shl = builder.CreateShl(lhs, ConstantInt::get(cast<Type>(Type::getInt32Ty(F.getContext())), APInt(32, shiftAmount)));
-										
-										for (auto& U : op->uses()) 
+										if(constIntValue % 2 == 0)
 										{
-											User* user = U.getUser();  
-											user->setOperand(U.getOperandNo(), shl);
+											int shiftAmount = std::log2(constIntValue);
+											errs() << "Shift left amount: " << shiftAmount << "\n";
+											
+											// Replace instrucion "mul" with "shl"
+											IRBuilder<> builder(op);
+											Value* shl = builder.CreateShl(lhs, ConstantInt::get(cast<Type>(Type::getInt32Ty(F.getContext())), APInt(32, shiftAmount)));
+											
+											for (auto& U : op->uses()) 
+											{
+												User* user = U.getUser();  
+												user->setOperand(U.getOperandNo(), shl);
+											}
+											
+											// Push replaced instruction onto the stack, later will be erased from IR
+											removeListInstr.push(&I);
 										}
-										
-										// Push replaced instruction onto the stack, later will be erased from IR
-										removeListInstr.push(&I);
 									}
 						  		}
 							}
-							
-							
-
+											
 							// Check if left operand is an integer constant divideable by 2
 							if(ConstantInt* CI = dyn_cast<ConstantInt>(lhs)) 
 							{
@@ -67,30 +72,79 @@ struct StrengthReduction : public PassInfoMixin<StrengthReduction> {
 						  		{
 									int constIntValue = CI->getSExtValue();
 									
-									if(constIntValue % 2 == 0)
+									if(constIntValue > 0)
 									{
-										int shiftAmount = std::log2(constIntValue);
-										errs() << "Shift amount: " << shiftAmount << "\n";
-										
-										// Replace instrucion "mul" with "shl" 
-										IRBuilder<> builder(op);
-										// Replace oreder of operands, shoft amount should be right-operand
-										Value* shl = builder.CreateShl(rhs, ConstantInt::get(cast<Type>(Type::getInt32Ty(F.getContext())), APInt(32, shiftAmount)));
-										
-										for (auto& U : op->uses()) 
+										if(constIntValue % 2 == 0)
 										{
-											User* user = U.getUser();  
-											user->setOperand(U.getOperandNo(), shl);
+											int shiftAmount = std::log2(constIntValue);
+											errs() << "Shift left amount: " << shiftAmount << "\n";
+											
+											// Replace instrucion "mul" with "shl" 
+											IRBuilder<> builder(op);
+											// Replace oreder of operands, shoft amount should be right-operand
+											Value* shl = builder.CreateShl(rhs, ConstantInt::get(cast<Type>(Type::getInt32Ty(F.getContext())), APInt(32, shiftAmount)));
+											
+											for (auto& U : op->uses()) 
+											{
+												User* user = U.getUser();  
+												user->setOperand(U.getOperandNo(), shl);
+											}
+											
+											// Push replaced instruction onto the stack, later will be erased from IR
+											removeListInstr.push(&I);
 										}
-										
-										// Push replaced instruction onto the stack, later will be erased from IR
-										removeListInstr.push(&I);
 									}
 						  		}
 							}		  	
 						}
 
 
+						/* ############################################## */
+
+
+						/* Optimize divide by a postive integer constant that is a power of 2 to be transformed into logic right shift operation */
+						
+						// Check if operator is div
+						if(auto* opc = dyn_cast<SDivOperator>(op))
+						{  	
+							// Get operands
+							Value* lhs = op->getOperand(0);
+							Value* rhs = op->getOperand(1);
+							
+							// Check if right operand is a postive integer constant divideable by 2
+							if(ConstantInt* CI = dyn_cast<ConstantInt>(rhs)) 
+							{
+						  		if(CI->getBitWidth() <= 32) 
+						  		{
+									int constIntValue = CI->getSExtValue();
+
+									if(constIntValue > 0)
+									{
+										if(constIntValue % 2 == 0)
+										{
+											int shiftAmount = std::log2(constIntValue);
+											errs() << "Shift right amount: " << shiftAmount << "\n";
+											
+											// Replace instrucion "div" with "lshr"
+											IRBuilder<> builder(op);
+											Value* lshr = builder.CreateLShr(lhs, ConstantInt::get(cast<Type>(Type::getInt32Ty(F.getContext())), APInt(32, shiftAmount)));
+											
+											for (auto& U : op->uses()) 
+											{
+												User* user = U.getUser();  
+												user->setOperand(U.getOperandNo(), lshr);
+											}
+											
+											// Push replaced instruction onto the stack, later will be erased from IR
+											removeListInstr.push(&I);
+										}
+									}
+						  		}
+							}
+
+							// Does not work when constant is the left operand.
+							// Example: div 8, %a is NOT lshr %a, 3
+						}
 					}
 				}
 			}
