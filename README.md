@@ -17,4 +17,4 @@ Run:
 
 To see Clang's original LLVM IR output:
 
-	$ clang -emit-llvm -S -o - test.c
+	$ clang -O0 -emit-llvm -S -o - test.c
